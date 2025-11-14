@@ -1,11 +1,10 @@
 import argparse
 import sys
-import requests
-import xml.etree.ElementTree as ET
 from validators import (
     validate_package, validate_repo_url, validate_version,
     validate_max_depth, validate_filter
 )
+from graph_builder import build_dependency_graph, print_tree
 
 
 def parse_args():
@@ -54,42 +53,6 @@ def validate_args(args):
         sys.exit(1)
 
 
-def get_nuspec_url(base_url, package, version):
-    # Убедимся, что base_url заканчивается на /
-    base = base_url.rstrip('/') + '/'
-    return f"{base}{package.lower()}/{version}/{package.lower()}.nuspec"
-
-
-def fetch_nuspec_content(url):
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        return response.text
-    except requests.exceptions.RequestException as e:
-        print(f"Error downloading nuspec from {url}: {e}")
-        sys.exit(1)
-
-
-def parse_dependencies_from_nuspec(nuspec_content):
-    try:
-        root = ET.fromstring(nuspec_content)
-        ns = {'ns': 'http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd'}
-        deps = root.find('.//ns:dependencies', ns)
-        if deps is None:
-            return []
-
-        direct_deps = set()  # Используем set, чтобы избежать дубликатов
-        for group in deps:
-            for dep in group:
-                id_elem = dep.get('id')
-                if id_elem:
-                    direct_deps.add(id_elem)
-
-        return list(direct_deps)
-    except ET.ParseError:
-        print("Error: Invalid .nuspec XML format.")
-        sys.exit(1)
-
 def main():
     try:
         args = parse_args()
@@ -100,17 +63,27 @@ def main():
     validate_args(args)
 
     if args.test_mode:
-        print("Test mode is enabled. This stage does not support test mode.")
-        sys.exit(1)
-
-    # (только для этого этапа) Вывести на экран все прямые зависимости
-    nuspec_url = get_nuspec_url(args.repo_url, args.package, args.version)
-    nuspec_content = fetch_nuspec_content(nuspec_url)
-    dependencies = parse_dependencies_from_nuspec(nuspec_content)
-
-    print("Direct dependencies:")
-    for dep in dependencies:
-        print(f"- {dep}")
+        repo_path = args.repo_url
+        graph = build_dependency_graph(
+            args.package, args.version, "", args.max_depth, args.filter, test_mode=True, repo_path=repo_path
+        )
+        print("Graph built from test repository:")
+        for pkg, deps in graph.items():
+            print(f"{pkg}: {deps}")
+        if args.output_tree:
+            print("Dependency Tree (Test Mode):")
+            print_tree(graph, args.package)
+    else:
+        graph = build_dependency_graph(
+            args.package, args.version, args.repo_url, args.max_depth, args.filter, test_mode=False
+        )
+        if args.output_tree:
+            print("Dependency Tree (Real Mode):")
+            print_tree(graph, args.package)
+        else:
+            print("Graph built successfully.")
+            for pkg, deps in graph.items():
+                print(f"{pkg}: {deps}")
 
 
 if __name__ == "__main__":

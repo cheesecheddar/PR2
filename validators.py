@@ -17,7 +17,6 @@ def validate_repo_url(value, test_mode):
     else:
         if not value.startswith(('http://', 'https://')):
             raise ValueError("repo-url must be a valid HTTP/HTTPS URL.")
-        # Не проверяем доступность, т.к. NuGet API не отвечает на HEAD
 
 
 def validate_version(value):
